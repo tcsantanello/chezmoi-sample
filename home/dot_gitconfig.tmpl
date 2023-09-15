@@ -1,0 +1,84 @@
+[user]
+{{- if eq .chezmoi.username "tsanten" }}
+  name = {{ .chezmoi.username }}
+  email = {{ .user.email }}
+
+[http "https://nyxsvlalb077.csc-us-rsr-m001.com"]
+  sslVerify = false
+
+[http "https://github.csc-us-rsr-m001.com"]
+  sslVerify = false
+
+{{- else }}
+  name = {{ .user.name }}
+  email = {{ .user.email }}
+{{- end }}
+
+[include]
+  path = .config/delta/themes.gitconfig
+
+[core]
+  autocrlf = input
+  pager = "{ test $TERM == dumb && cat || delta; }"
+
+[pager]
+  blame = "{ test $TERM == dumb && cat || delta; }"
+  diff = true
+  show = true
+
+[interactive]
+  diffFilter = "{ test $TERM == dumb && cat || delta --color-only; }"
+
+[delta]
+  navigate = true  # use n and N to move between diff sections
+  features = Coldark-Dark
+#  side-by-side = true
+  line-numbers = true
+  hyperlinks = true
+
+[merge]
+  conflictstyle = diff3
+
+[diff]
+  colorMoved = default
+  algorithm = minimal
+
+[difftool]
+  prompt = false
+
+[mergetool]
+  prompt = false
+
+[color]
+  ui = true
+
+[push]
+  default = upstream
+  rebase = true
+
+[credential]
+  helper = store
+
+[init]
+  defaultBranch = master
+
+[alias]
+  dif = diff -w --cached
+  ldiff = log -p -1
+  lg =  "!f() { git log --color=always --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' \"$@\"; echo; }; f \"$@\""
+  oldest-ancestor = !bash -c 'diff -u <(git rev-list --first-parent \"master\") <(git rev-list --first-parent \"HEAD\") | sed -ne \"s/^ //p\" | head -1' -
+  tree = "!f() { git lg --all; echo; }; f"
+  lg1 = "!f() { git log --color=always --graph --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all; echo ''; }"
+  lg2 = "!f() { git log --color=always --graph --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n''          %C(white)%s%C(reset) %C(dim white)- %an%C(reset)' --all; echo ''; }"
+  cat = "!f() { git show $1:$2; }; f"
+  co = checkout
+  ci = commit
+  st = status -s --untracked-files=no
+  squish = "!f(){ git reset $( git commit-tree HEAD^{tree} -m \"${1:-Fresh start}\" ); }; f"
+  clone = clone --recursive
+
+[filter "lfs"]
+  clean = git-lfs clean -- %f
+  smudge = git-lfs smudge -- %f
+  process = git-lfs filter-process
+  required = true

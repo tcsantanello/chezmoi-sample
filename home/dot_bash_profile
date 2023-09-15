@@ -1,0 +1,18 @@
+
+if test "${SHELL}" == "/bin/sh"; then
+  exec /bin/bash $@
+fi
+
+function runparts( ) {
+    local dir="$1"
+    for script in "$dir"/*.sh; do
+      test -r "${script}" && . "${script}"
+      unset script
+    done
+}
+
+for dir in "$HOME/.bash.d/$(uname -n)" "$HOME/.bash.d" ; do
+    runparts "${dir}"
+done
+
+unset runparts

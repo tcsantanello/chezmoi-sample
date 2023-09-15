@@ -1,0 +1,23 @@
+#!/bin/bash
+
+function cleanup( ) {
+    rm ${DEST} ${SOURCE} >& /dev/null
+}
+
+trap 'cleanup' 1 2 3 15
+
+SOURCE=$( TMP="$( mktemp -u ).c"; tail -n +2 $1 > ${TMP}; echo ${TMP} )
+DEST=$( mktemp )
+
+shift
+
+cc -o ${DEST} ${SOURCE} "$@"
+RET=$?
+
+if test $RET -eq 0; then
+    ${DEST}
+    RET=$?
+fi
+
+cleanup
+exit $RET

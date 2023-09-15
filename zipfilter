@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+
+tmp=$( mktemp XXXXXX.zip )
+
+cat - > "${tmp}"
+
+unzip -p "${tmp}" "${@}"; rc=$?
+
+rm "${tmp}"
+
+exit $rc

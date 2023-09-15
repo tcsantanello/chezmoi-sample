@@ -1,0 +1,9 @@
+#!/usr/bin/perl
+
+use strict;
+
+my $str;
+
+while ( read STDIN, $str, 2 ) {
+    printf "%s", pack "H2", $str; 
+}

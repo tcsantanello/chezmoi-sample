@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+
+QUERY='
+# Eliminate any field containing an empty value by reconstructing objects without them
+def noEmpty:
+  [ "", null, [], {} ] as $e |
+  walk( if type == "object" then   with_entries( select( ( .value | IN( $e[] ) | not ) or
+                                                         ( .key == "emptyDir" ) ) )
+        elif type == "array" then  map( select( . | IN( $e[] ) | not ) )
+        else                       .
+        end );
+
+# Dynamic Field filter, constructs new objects by selecting all but filtered keys/values
+def filterDefaults(o;$d):
+   o |= with_entries( select( .key as $key | .value as $value |
+                              ( $d | has( $key ) | not )
+                              or ( ( $d[ $key ] != $value ) and
+                                   ( $d[ $key ] !=   null ) ) ) );
+
+# Filter out cluster state from services
+def service(o): .
+  | del( o.clusterIP )
+  | del( o.clusterIPs )
+  | del( o.ipFamilies )
+  | del( o.ipFamilyPolicy )
+  | del( o.ports[].nodePort )
+  | filterDefaults(o; {
+    "sessionAffinity":  "None"
+  } )
+  ;
+
+# Filter container probes
+def probe(o):
+  filterDefaults(o; {
+     "failureThreshold":               1,
+     "periodSeconds":                 10,
+     "successThreshold":               1,
+     "timeoutSeconds":                 1
+  } )
+  ;
+
+# Filter Container spec
+def container(o):
+  filterDefaults(o; {
+     "terminationMessagePath": "/dev/termination-log",
+     "terminationMessagePolicy":   "File",
+     "imagePullPolicy":          "Always",
+  } )
+  | if (o|has("livenessProbe"))  then probe( o.livenessProbe  ) else . end
+  | if (o|has("readinessProbe")) then probe( o.readinessProbe ) else . end
+  | if (o|has("startupProbe"))   then probe( o.startupProbe   ) else . end
+  ;
+
+# Filter v1/Pod spec
+def pod(o):
+  del( o.ephemeralContainers )
+  | if (o|has("containers"))     then container( o.containers[]     ) else . end
+  | if (o|has("initContainers")) then container( o.initContainers[] ) else . end
+  | filterDefaults(o; {
+     "dnsPolicy":           "ClusterFirst",
+     "restartPolicy":             "Always",
+     "schedulerName":  "default-scheduler",
+     "terminationGracePeriodSeconds":   30,
+     "enableServiceLinks":            true,
+     "serviceAccount": o.serviceAccountName,
+     "serviceAccountName":       "default"
+  })
+  ;
+
+# Filter apps/v1/Deployment spec
+def deployment(o):
+  pod( o.template.spec )
+  | filterDefaults(o; {
+     "progressDeadlineSeconds":        600,
+     "replicas":                         1,
+     "revisionHistoryLimit":             3,
+  })
+  ;
+
+# Filter apps/v1/StatefulSet spec
+def statefulSet(o):
+  pod( o.template.spec )
+  | filterDefaults(o; {
+     "podManagementPolicy": "OrderedReady",
+     "replicas":                         1,
+     "revisionHistoryLimit":            10,
+  } )
+  ;
+
+# Filter apps/v1/DaemonSet spec
+def daemonSet(o):
+  pod( o.template.spec )
+  | filterDefaults(o; {
+     "revisionHistoryLimit":            10,
+  } )
+  ;
+
+# Filter apps/v1/ReplicaSet spec
+def replicaSet(o):
+  pod( o.template.spec )
+  | filterDefaults(o; {
+     "replicas":                         1,
+     "revisionHistoryLimit":             3,
+  } )
+  ;
+
+# Filter batch/v1/Job spec
+def job(o):
+  pod( o.template.spec )
+  ;
+
+# Filter batch/v1/CronJob spec
+def cronJob(o):
+  job( o.jobTemplate.spec )
+  | filterDefaults(o; {
+     "concurrencyPolicy":          "Allow",
+     "failedJobsHistoryLimit":           1,
+     "successfulJobsHistoryLimit":       3,
+     "suspend":                      false
+  } )
+  ;
+
+# Filter any object metadata, eliminating common object tracking fields
+def metadata(o):
+  filterDefaults(o; {
+    "creationTimestamp":              null,
+    "generation":                     null,
+    "resourceVersion":                null,
+    "uid":                            null,
+    "ownerReferences":                null,
+    "selfLink":                       null
+  } )
+
+  # If metadata has annotations, assign new annotations without various .kubernetes.io keys
+  | if (o|has("annotations")) then
+      ( o.annotations |= with_entries( select( .key | contains( ".kubernetes.io" ) | not ) ) )
+    else . end
+  ;
+
+# Filter v1/ServiceAccount
+def serviceAccount(o):
+  # Eliminate SA account secrets
+  del( o.secrets )
+  ;
+
+# Filter v1/PersistentVolumeClaim
+def pvc(o):
+  del( o.metadata.finalizers )
+  | del( o.spec.volumeName )
+  ;
+
+# Filter v1/PersistentVolume
+def pv(o):
+  del( o.metadata.finalizers )
+  | del( o.spec.claimRef )
+  ;
+
+def clear: .
+  # Remove the object state
+  | del( .status )
+
+  # Clean the metadata
+  | metadata( .metadata )
+
+  # Conditional filtering based on the object type
+  | if ( .apiVersion == "v1" ) then
+      if   ( .kind == "Service"               ) then  service( .spec )
+      elif ( .kind == "ServiceAccount"        ) then  serviceAccount( . )
+      elif ( .kind == "PersistentVolumeClaim" ) then  pvc( . )
+      elif ( .kind == "PersistentVolume"      ) then  pv( . )
+      else . end
+    elif ( .apiVersion == "apps/v1" ) then
+      if   ( .kind == "Deployment"  )           then  deployment( .spec )
+      elif ( .kind == "StatefulSet" )           then  statefulSet( .spec )
+      elif ( .kind == "DaemonSet"   )           then  daemonSet( .spec )
+      elif ( .kind == "ReplicaSet"  )           then  replicaSet( .spec )
+      else . end
+    elif ( .apiVersion == "batch/v1" ) then
+      if   ( .kind == "Job"     )               then  job( .spec )
+      elif ( .kind == "CronJob" )               then  cronJob( .spec )
+      else . end
+    else . end
+  # Remove null/empty fields
+  | noEmpty
+  ;
+
+. | if has( "items" ) then ( .items[] |= clear ) else clear end
+'
+
+: ${YQ:=$(which yq 2>/dev/null)}
+: ${JQ:=$(which jq 2>/dev/null)}
+
+filter() {
+  echo >&2 "Error could not perform filtering: ${ERROR_MESSAGE}"
+  exec cat -
+}
+
+if test -n "${YQ}"; then
+  if ${YQ} --version | grep mikefarah >&/dev/null; then
+    if test -n "${JQ}"; then
+      # Use YQ to coerce the object into JSON to run JQ and finally convert to YAML with YQ
+      filter() { ${YQ} e '.' -o j "$@" | ${JQ} -rc "${QUERY}" | ${YQ} e '.' -p j -o y; }
+    else
+      ERROR_MESSAGE="Could not find JQ"
+    fi
+  else
+    # Use the JQ filter YQ implementation to perform the query and output as YAML
+    filter() { ${YQ} --yaml-output "${QUERY}" "$@"; }
+  fi
+else
+  ERROR_MESSAGE="Could not find YQ"
+fi
+
+filter

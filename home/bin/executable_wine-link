@@ -1,0 +1,26 @@
+#!/bin/sh
+
+FILE=$( winepath "$@" )
+EXT=$( echo $FILE | sed 's/.*\.\(.*\)$/\1/g' )
+AMAROK="/usr/bin/amarok -e"
+KATE="/usr/bin/kate -u"
+ARK=/usr/bin/ark
+MPLAY=/usr/bin/gmplayer
+
+ASSOCIATIONS=(    \
+    " ${KATE}"    \
+    "nfo ${KATE}" \
+    "txt ${KATE}" \
+    "rar ${ARK}"  \
+    "zip ${ARK}"  \
+    "ace ${ARK}"  \
+    "mp3 ${AMAROK}" \
+    "avi ${MPLAY}" \
+)
+
+for(( i=0; i < ${#ASSOCIATIONS[@]} ; ++i )); do
+  if [ "${ASSOCIATIONS[$i]:0:${#EXT}+1}" == "${EXT} " ]; then
+    exec ${ASSOCIATIONS[$i]:${#EXT}+1} "${FILE}"
+    exit $?
+  fi
+done

@@ -1,0 +1,4 @@
+if ! podman machine inspect | jq -r '.[0].State' | grep running >& /dev/null; then
+  podman machine start 2>&1
+  export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/machine/podman-machine-default/podman.sock"
+fi

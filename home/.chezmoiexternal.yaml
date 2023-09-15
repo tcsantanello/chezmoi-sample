@@ -1,0 +1,221 @@
+# bin/tool:
+#   type: file
+#   url: https://api.github.com/repos/${org}/${repo}/releases/latest
+#   executable: true
+#   filter:
+#     command: '{{ .chezmoi.workingTree }}/gh-latest
+#     args:
+#       - --arch
+#       - {{ .chezmoi.arch }}
+#       - --os
+#       - {{ .chezmoi.os }}
+#       - --name
+#       -
+
+
+bin/.bw:
+  type: file
+  refreshPeriod: 168h
+  stripComponents: 1
+  executable: true
+  url: 'https://vault.bitwarden.com/download/?app=cli&platform={{ eq .chezmoi.os "darwin" | ternary "macos" "linux "}}'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - bw
+
+.tmux/plugins/tpm:
+  type: git-repo
+  url: 'https://github.com/tmux-plugins/tpm'
+  refreshPeriod: 168h
+
+.emacs.d:
+  type: git-repo
+  url: 'https://github.com/hlissner/doom-emacs'
+  refreshPeriod: 168h
+
+.config/delta/themes.gitconfig:
+  type: file
+  url: 'https://raw.githubusercontent.com/dandavison/delta/master/themes.gitconfig'
+  refreshPeriod: 168h
+
+.bash.d/liquidprompt.sh:
+  type: file
+  url: 'https://raw.githubusercontent.com/nojhan/liquidprompt/master/liquidprompt'
+  refreshPeriod: 168h
+
+.bash.d/resty.sh:
+  type: file
+  url: 'https://raw.githubusercontent.com/micha/resty/master/resty'
+  refreshPeriod: 168h
+
+bin/jq:
+  refreshPeriod: 168h
+  type: file
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "jqlang/jq" }}'
+  executable: true
+
+bin/yq:
+  refreshPeriod: 168h
+  type: file
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "mikefarah/yq" "skip" "musl|deb|apk|pkg|tar" }}'
+  executable: true
+
+bin/delta:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "dandavison/delta" "skip" "musl" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - /delta
+
+bin/kubectl:
+  type: file
+  refreshPeriod: 168h
+  url: 'https://dl.k8s.io/release/v1.25.3/bin/{{- .chezmoi.os -}}/{{ .chezmoi.arch }}/kubectl'
+  executable: true
+
+bin/kustomize:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "kubernetes-sigs/kustomize" }}' # Broken
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - kustomize
+
+{{ if eq .chezmoi.os "darwin" }}
+bin/vagrant:
+  refreshPeriod: 168h
+  executable: true
+  type: file
+  url: 'https://releases.hashicorp.com/vagrant/2.3.2/vagrant_2.3.2_darwin_amd64.dmg'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/dmgextract'
+    args:
+      - bin/.vagrant
+      - bin/vagrant
+
+bin/aws:
+  executable: true
+  refreshPeriod: 168h
+  type: file
+  url: 'https://awscli.amazonaws.com/AWSCLIV2.pkg'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/pkgextract'
+    args:
+      - bin/.aws
+      - aws-cli/aws
+{{ end }}
+
+bin/stern:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "stern/stern" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - stern
+
+bin/k9s:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "derailed/k9s" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - k9s
+
+bin/terraform:
+  type: file
+  refreshPeriod: 168h
+  stripComponents: 1
+  executable: true
+  url: 'https://releases.hashicorp.com/terraform/1.1.8/terraform_1.1.8_{{- .chezmoi.os -}}_{{- .chezmoi.arch -}}.zip'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - terraform
+
+bin/terragrunt:
+  type: file
+  refreshPeriod: 168h
+  executable: true
+  url: 'https://github.com/gruntwork-io/terragrunt/releases/download/v0.36.7/terragrunt_{{- .chezmoi.os -}}_{{- .chezmoi.arch -}}'
+
+bin/chezmoi:
+  type: file
+  refreshPeriod: 168h
+  executable: true
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "twpayne/chezmoi" "skip" "musl|deb|apk|pkg|tar" }}'
+
+bin/kubectl-view-allocations:
+  type: file
+  refreshPeriod: 168h
+  executable: true
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "davidB/kubectl-view-allocations" }}'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - kubectl-view-allocations
+
+bin/kubectl-whoami:
+  type: file
+  refreshPeriod: 168h
+  executable: true
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "rajatjindal/kubectl-whoami" }}'
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - kubectl-whoami
+
+bin/.pwsh:
+  type: archive
+  refreshPeriod: 168h
+  executable: true
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "PowerShell/PowerShell" "skip" "alpine|pkg|fxd" }}'
+
+bin/ksops:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "viaduct-ai/kustomize-sops" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - "ksops"
+
+bin/sops:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "mozilla/sops" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - "/sops$"
+
+bin/age:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "FiloSottile/age" "skip" "pkg" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - "/age$"
+
+bin/age-keygen:
+  type: file
+  refreshPeriod: 168h
+  url: '{{ template "gh-release" dict "chezmoi" .chezmoi "project" "FiloSottile/age" "skip" "pkg" }}'
+  executable: true
+  filter:
+    command: '{{ .chezmoi.workingTree }}/unar'
+    args:
+      - "/age-keygen$"

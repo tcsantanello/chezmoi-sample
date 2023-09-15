@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+
+set -e
+
+DIR="$(chezmoi source-path)"
+TARGET="${HOME}/bin/.bw"
+
+which wget >&/dev/null && get() { wget -q "$1" -O -; }
+which curl >&/dev/null && get() { curl -Lsk "$1" -o -; }
+
+{{ if eq .chezmoi.os "darwin" -}}
+OS=macos
+{{- else if eq .chezmoi.os "linux" -}}
+{{- if or ( hasKey .chezmoi.kernel "osrelease" | not )
+          ( get .chezmoi.kernel "osrelease" | lower | contains "microsoft" | not ) -}}
+OS=linux
+{{- else -}}
+OS=windows
+{{- end -}}
+{{- end }}
+
+mkdir -p "$(dirname "${TARGET}")" >&/dev/null || true
+
+get "https://vault.bitwarden.com/download/?app=cli&platform=${OS}" |
+  ${DIR}/../unar bw >"${TARGET}"
+
+cp ${DIR}/bin/executable_bww ${HOME}/bin/bww
+test ! -l ${HOME}/bin/bw && ln -s ${HOME}/bin/bww ${HOME}/bin/bw
+chmod 755 "${TARGET}" "${HOME}/bin/bww"

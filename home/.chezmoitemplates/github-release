@@ -1,0 +1,27 @@
+{{- $assets := ( gitHubLatestRelease .project ).Assets -}}
+{{- $arch   := printf "(%s%s)" ( .chezmoi.arch          ) ( hasKey . "arch" | ternary ( printf "|%s" ( get . "arch") ) "" ) -}}
+{{- $os     := printf "(%s%s)" ( .chezmoi.os    | lower ) ( hasKey . "os"   | ternary ( printf "|%s" ( get . "os"  ) ) "" ) -}}
+{{- $filter := hasKey . "skip" | ternary ( printf "(%s)" ( get . "skip" | join "|" ) ) "" -}}
+{{- $url    := "" -}}
+
+{{- if eq $arch "(amd64)" -}}
+{{-  $arch = "(amd64|x86_64|x64)" -}}
+{{- else if eq $arch "(arm64)" -}}
+{{-  $arch = "(arm64|aarch64)" -}}
+{{- end -}}
+
+{{- if eq $os "(darwin)" -}}
+{{-  $os = printf "(darwin|macos|osx)" -}}
+{{- else if eq "microsoft" ( .chezmoi.kernel.osrelease | lower ) -}}
+{{-  $os = printf "(windows|win) " -}}
+{{- end -}}
+
+{{- range $assets -}}
+{{-  if and ( ( .BrowserDownloadURL | lower ) | regexMatch ( $os   | lower ) )
+            ( ( .BrowserDownloadURL | lower ) | regexMatch ( $arch | lower ) )
+            ( empty $filter | ternary true ( .BrowserDownloadURL | regexMatch $filter | not ) )
+            ( empty $url ) -}}
+{{-     $url = .BrowserDownloadURL -}}
+{{-  end -}}
+{{- end -}}
+{{- $url -}}

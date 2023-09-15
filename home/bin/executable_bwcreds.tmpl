@@ -1,0 +1,43 @@
+#!/bin/bash
+{{ if index . "bitwarden" -}}
+{{- if index .bitwarden "credentials" -}}
+
+export DISPLAY=${DISPLAY:-:0}
+
+XDOTOOL=$(which xdotool)
+
+function usage() {
+  cat <<EOF
+$0: get bitwarden credentials
+  	-u  get the user too
+EOF
+  exit 0
+}
+
+while getopts "u" flag 2>/dev/null; do
+  test "$flag" = "?" && usage || export ${flag}=${OPTARG:-true}
+done
+
+NOW=$(date +%s)
+THEN=$(bww sync --last | xargs -t -I _ date -d _ +%s)
+
+if test $((${NOW} - ${THEN})) -ge 86400; then
+  bww sync
+fi
+
+if test -n "${u}"; then
+  username=$(bww get username '{{ .bitwarden.credentials }}')
+fi
+
+password=$(bww get password '{{ .bitwarden.credentials }}')
+
+if test -n "${username}"; then
+  ${XDOTOOL} type --delay 0 "${username}"
+  ${XDOTOOL} key Tab
+fi
+
+${XDOTOOL} type --delay 0 "${password}"
+${XDOTOOL} key Return
+
+{{- end -}}
+{{- end }}

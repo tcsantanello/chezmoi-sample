@@ -1,0 +1,7 @@
+#!/bin/bash
+
+. ~/.bash.d/ssh.sh
+
+ssh "$@"
+
+

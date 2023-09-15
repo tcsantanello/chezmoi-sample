@@ -1,0 +1,9 @@
+#!/bin/gawk -f
+
+{
+    if ( $0 in arr ) {
+        print $0
+    } else {
+        arr[ $0 ] = 1
+    }
+}

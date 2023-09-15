@@ -1,0 +1,243 @@
+#!/usr/bin/env perl
+
+use strict;
+use 5.00503;
+
+use Data::Dumper;
+
+{
+    package Logger;
+    use POSIX qw( strftime );
+
+    my $MAXSIZE = 100000000;
+
+    sub new {
+        my $class = shift;
+        my %params = @_;
+
+        $params{ 'path' } = "."      if ! $params{ 'path' };
+        $params{ 'max'  } = $MAXSIZE if ! $params{ 'max'  };
+        $params{ 'name' } = "log"    if ! $params{ 'name' };
+        $params{ 'arc'  } = "logs"   if ! $params{ 'arc'  };
+        
+        return bless \%params, $class;
+    }
+
+    sub flush { my $h = select($_[0]); my $af=$|; $|=1; $|=$af; select($h); }
+
+    sub log {
+        my $this = shift;
+        
+        if ( ! defined $this->{ 'fd' } ) {
+            my $logname = $this->{ 'path' } . "/" . $this->{ 'name' };
+            
+            $this->{ 'fd' } = do { local *FH; *FH };
+
+            if ( ( stat $logname )[ 7 ] > $MAXSIZE ) { # 
+                my $logs    = do { local *DH; *DH };
+                my $arcpath = $this->{ 'path' } . "/" . $this->{ 'arc' };
+                my $arcname = "";
+                my @files;
+                my @parts;
+
+                mkdir $arcpath;
+                opendir $logs, $arcpath;
+
+                @files   = sort { $a cmp $b } ( $this.{ 'name' } . "0", readdir( $logs ) );
+                @parts   = split /\./, $files[ -1 ];
+                $arcname = $parts[ 0 ] . "." . ( $parts[ 1 ] + 1 );
+
+                closedir $logs;
+
+                rename $logname, "$arcpath/" . $arcname;
+            }
+            
+            open( $this->{ 'fd' }, ">> $logname" ) or die "Unable to open log";
+            
+        }
+        
+        my $fd   = $this->{ 'fd' };
+        my $line = sprintf( "%s" . shift, strftime( "%Y/%m/%d %H:%M:%S: ", localtime ), @_ );
+        $line =~ s/\s+$//g;
+        
+        printf( $fd "$line\n" );
+        flush $fd;
+    }
+}
+
+{
+    package NistData;
+
+    use Data::Dumper;
+
+    {
+        package Static;
+
+        use HTTP::Request;
+        use LWP::UserAgent;
+        use File::Basename;
+        use Compress::Raw::Zlib;
+        use IO::Uncompress::Gunzip;
+        use Storable;
+        use Data::Dumper;
+
+        my $NVD_BASE = "https://nvd.nist.gov/feeds";
+        
+        my %urls = (
+            "xml" => [
+                "$NVD_BASE/xml/cve/1.2/nvdcve-modified.xml.gz",
+                "$NVD_BASE/xml/cve/2.0/nvdcve-2.0-modified.xml.gz",
+                
+                "$NVD_BASE/xml/cve/1.2/nvdcve-%d.xml.gz",
+                "$NVD_BASE/xml/cve/2.0/nvdcve-2.0-%d.xml.gz",
+            ],
+            "json" => [
+                "$NVD_BASE/json/cve/1.0/nvdcve-1.0-modified.json.gz",
+                "$NVD_BASE/json/cve/1.0/nvdcve-1.0-%d.json.gz",
+            ],
+            );
+        my $agent = LWP::UserAgent->new;
+
+        sub response { my $args = shift; return $agent->request( HTTP::Request->new( %$args ) ); }
+
+        sub urls {
+            my $type = shift;
+            my $start = shift;
+            my $end = shift;
+            my @urls = @{ $urls{ $type } };
+            my @ret;
+            
+            foreach my $year ( $start..$end ) {
+                foreach my $url ( @urls ) {
+                    push @ret, sprintf( $url, $year );
+                }
+            }
+            
+            return ( do { my %seen; grep { !$seen{$_}++ } @ret } );
+        }
+
+        sub dlsize {
+            my $url  = shift;
+            my $resp = Static::response( { 'HEAD' => $url } );
+            my $size = $resp->headers->header( 'Content-Length' );
+            return $size;
+        }
+
+        sub meta {
+            my $name = ( shift ) . "/.meta";
+            my $data = shift;
+            
+            if ( $data ) {
+                return Storable::nstore( $data, $name );
+            } else {
+                return Storable::retrieve $name if ( -e $name );
+                my %tmp;
+                return \%tmp;
+            }
+        }
+    
+        sub need {
+            my %lhs = %{$_[0]};
+            my %rhs = %{$_[1]};
+            my %merged = ( %lhs, %rhs );
+            
+            map { 
+                delete $merged{ $_ };
+            } grep { 
+                ( $lhs{$_} == $rhs{$_} ) || ( $lhs{$_} eq $rhs{$_} );
+            } keys %merged;
+            
+            return %merged;
+        }
+        
+        sub download {
+            my $dest = shift;
+            my $url = shift;
+            my $resp = Static::response( { 'GET' => $url } );
+            my $name = $dest . "/" . basename $url;
+            my $fd   = do { local *FH; *FH };
+
+            if ( $resp->code / 100 == 2 ) {
+                my $out = $resp->content;
+                
+                IO::Uncompress::Gunzip::gunzip( \$out => $1 ) if ( $name =~ m/(.*)\.gz/ );
+
+                return $name;
+            }
+            
+            return 0;
+        }
+    }
+    
+    sub new {
+        my $class = shift;
+        my %params = @_;
+        my $end = 1900 + (localtime)[ 5 ];
+        
+        $params{ 'dest'  } = '.'   if ! $params{ 'dest'  };    mkdir $params{ 'dest' };
+        $params{ 'type'  } = 'xml' if ! $params{ 'type'  };
+        $params{ 'start' } = 2002  if ! $params{ 'start' };
+        $params{ 'end'   } = $end  if ! $params{ 'end'   };
+        $params{ 'urls'  } = [ Static::urls $params{ 'type' }, $params{ 'start' }, $params{ 'end' } ];
+        $params{ 'have'  } = Static::meta $params{ 'dest' };
+        $params{ 'log'   } = Logger->new( 'path' => $params{ 'dest' } );
+        
+        return bless \%params, $class;
+    }
+
+    sub type  { my $this = shift; return $this->{ 'type'  }; }
+    sub start { my $this = shift; return $this->{ 'start' }; }
+    sub end   { my $this = shift; return $this->{ 'end'   }; }
+    sub dest  { my $this = shift; return $this->{ 'dest'  }; }
+    sub urls  { my $this = shift; return @{$this->{ 'urls' }}; }
+    sub have  { my $this = shift; return %{$this->{ 'have' }}; }
+    
+    sub genmeta {
+        my $this = shift;
+        my %ret;
+
+        $this->{ 'log' }->log( "Acquiring server meta data" );
+        foreach my $url ( $this->urls ) {
+            $ret{ $url } = Static::dlsize( $url );
+        }
+
+        return %ret;
+    }
+    
+    sub mirror {
+        my $this = shift;
+        my %sdata = $this->genmeta;
+        my %mdata = $this->have;
+        my %need = Static::need \%mdata, \%sdata;
+
+        if ( ! keys %need ) {
+            $this->{ 'log' }->log( 'No missing files' );
+            return;
+        }
+
+        $this->{ 'log' }->log( 'Missing the following:' );
+        
+        foreach my $url ( keys %need ) {
+            $this->{ 'log' }->log( "   $url" );
+        }
+        
+        foreach my $url ( keys %need ) {
+            if ( my $rc = Static::download $this->dest, $url ) {
+                $this->{ 'log' }->log( "Acquired '$url' (" . $sdata{$url} . "," . $mdata{$url} . ")\n" );
+                $mdata{ $url } = $sdata{ $url };
+            } else {
+                $this->{ 'log' }->log( "Failed to download '$url'\n" );
+            }
+        }
+
+        Static::meta $this->dest, \%mdata;
+    }
+    
+    sub force {
+        my $this = shift;
+        my %sdata = $this->genmeta;
+        Static::meta $this->dest, \%sdata;
+    }
+}
+
+( NistData->new( 'dest' => ( $ARGV[ 0 ] || 'NIST' ) ) )->mirror;

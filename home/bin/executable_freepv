@@ -1,0 +1,7 @@
+#!/bin/bash
+
+oc get pv | awk '/Released/ { print $1 }' | while read line; do
+  oc get pv/${line} -o yaml | grep path | cut -f 2 -d: | xargs -n 1 -I _ rm -rf _/*
+  oc patch pv/${line} --type json -p $'- op: remove\n  path: /spec/claimRef'
+done
+

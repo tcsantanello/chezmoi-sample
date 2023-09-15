@@ -1,0 +1,23 @@
+#!/bin/bash
+
+USAGE=false
+U=true
+W=true
+
+function usage( ) {
+    print "HI";
+    exit 0;
+}
+
+while getopt "ubwpL:" -l "ignore-eol-style" flag; do
+    if test "$file" = "?"; then
+        usage
+    else
+        export ${flag}=${OPTARG:-${TRUE}}
+    fi
+done
+
+#astyle -s2 -aCSNLnwpqD ${E:--z2} < ${LEFT}  > ${LTMP}
+#astyle -s2 -aCSNLnwpqD ${E:--z2} < ${RIGHT} > ${RTMP}
+
+diff ${U:+-U2} ${W:+-wb} ${B:+-b} ${P:+-p} --label="${LLABEL:-${LEFT}}" --label="${RLABEL:-${RIGHT}}" <( clang-format ${LTMP} ) <( clang-format ${RTMP} )

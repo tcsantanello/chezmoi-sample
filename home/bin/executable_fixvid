@@ -1,0 +1,5 @@
+#!/bin/sh
+
+
+#xrandr -s $( xrandr | awk '/^[ \t]+/{ print $1; exit 1; }' )
+nvidia-settings --assign CurrentMetaMode="DFP-0:nvidia-auto-select"

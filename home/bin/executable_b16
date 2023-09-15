@@ -1,0 +1,9 @@
+#!/usr/bin/perl
+
+use strict;
+
+my $ch;
+
+while ( read STDIN, $ch, 1 ) { 
+    printf "%02X", ord $ch; 
+}

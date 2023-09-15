@@ -1,0 +1,154 @@
+#!/bin/bash
+#----------------------------------------------------------------
+# Title: rc-config
+# Author: Joseph Harrison
+# Date Created: 12/16/2005
+# Date Modified: 12/16/2005
+# Purpose: Configure services and run-levels
+# Dependencies: grep, sed, update-rc.d
+#----------------------------------------------------------------
+
+USAGE="Usage: rc-config [OPTION] [SERVICE ... STATE]\n\
+Information about services and run-levels, configure services and run-levels\n\
+Sorts entries alphabetically\n\
+\n\
+Mandatory arguments to long options are mandatory for short options too.\n\
+-h,\t\t\t Show help\n\
+-l,\t\t\t List all services and run-levels\n\
+-ls <service>,\t\t List a specific service and run-levels\n\
+-s <service> <off|on>,\t Configure service\n\
+\t\t\t Ex: rc-config -s ssh off\n\
+-t,\t\t\t Terse output\n\n"
+LISTSVC=0
+SETSVC=0
+TERSE=0
+
+checkroot(){
+if [ $EUID -ne 0 ]
+then
+echo "you must be root to use this feature"
+exit 1
+fi
+}
+
+checkopts()
+{
+while getopts "lsth" flag
+do
+case $flag in
+l ) LISTSVC=1;;
+s ) SETSVC=1;;
+t ) TERSE=1;;
+h ) echo -en $USAGE;
+exit 1;;
+* ) echo -en $USAGE
+exit 1;;
+esac
+done
+if [ -z "$1" ]
+then
+echo -en $USAGE
+fi
+}
+
+showrc(){
+if [ $TERSE -eq 0 ]
+then
+echo -en "SERVICE\t\t\tRUN-LEVELS\n"
+fi
+
+if [ $SETSVC -eq 0 ]
+then
+slist=`find /etc/init.d/ -perm -100 \
+| sed "s/\/etc\/init.d\///"`
+elif [ $SETSVC -eq 1 ]
+then
+svc=$2
+if [ -f "/etc/init.d/$svc" ]
+then
+slist="$svc"
+else
+echo "$svc: does not exist"
+exit 1
+fi
+fi
+
+for msvc in $slist
+do
+sln=18
+tsvc=$msvc
+while [ ${#tsvc} -lt $sln ]
+do
+tsvc="$tsvc "
+done
+echo -en "${tsvc:0:$sln}\t"
+for level in 0 1 2 3 4 5 6
+do
+svcs=`ls -1 /etc/rc${level}.d/S* \
+| sed "s/\/etc\/rc${level}.d\/S[0-9]*//"`
+state=0
+for svc in $svcs
+do
+if [ "$svc" = "$msvc" ]
+then
+state=1
+continue
+fi
+done
+if [ $state -eq 1 ]
+then
+echo -en "$level:on\t"
+else
+echo -en "$level:off\t"
+fi
+done
+echo
+done
+}
+
+setsvc(){
+svc=$2
+state=$3
+
+if [ -z "$svc" ] || [ -z "$state" ]
+then
+echo -en $USAGE
+exit 1
+fi
+
+if [ ! -f "/etc/init.d/$svc" ]
+then
+echo "$svc: does not exist"
+exit 1
+fi
+
+if [ $state = "on" ]
+then
+update-rc.d $svc defaults
+elif [ $state = "off" ]
+then
+echo "disabling service: $svc"
+/etc/init.d/$svc stop > /dev/null
+for link in `find /etc/rc* -type l -name "[S,K][0-9][0-9]$svc"`
+do
+unlink $link
+done
+else
+echo -en $USAGE
+fi
+}
+
+main(){
+checkopts "$@"
+if [ $LISTSVC -eq 1 ]
+then
+showrc "$@"
+elif [ $SETSVC -eq 1 ]
+then
+checkroot
+setsvc "$@"
+fi
+}
+
+main "$@"
+

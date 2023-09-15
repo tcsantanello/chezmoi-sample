@@ -1,0 +1,4 @@
+#!/bin/sh
+
+ps -u $USER -o pid,cmd | awk 'BEGIN{ PIDS="" }{ if ( $2 ~ /'$1'/ ) PIDS=PIDS" "$1; } END{ print PIDS }'
+

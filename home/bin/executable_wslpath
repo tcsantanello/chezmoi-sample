@@ -1,0 +1,40 @@
+#!/bin/bash
+
+if test ! -e /dev/lxss; then
+    echo "Not in WSL" > /dev/stderr
+    exit 1
+fi
+
+if test -z "${WSLDIST}"; then
+    echo "WSLDIST not set" > /dev/stderr
+    exit 1
+fi
+
+root=$( powershell.exe "(Get-ChildItem \"HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss\" -Recurse | ForEach-Object { Get-ItemProperty \$_.pspath } | Where-Object { \$_.DistributionName -eq \"${WSLDIST}\" }).BasePath" | tr -d '\r' )/rootfs
+path="$( readlink -f $1 )"
+
+(
+    mount
+    cat << EOF 
+${root//\\/\/} on / type drvfs (rw,noatime,uid=1000,gid=1000,case=off)
+EOF
+) | awk -v path="${path}" '/drvfs/ {
+          split( gensub( "^(.*) on (.*) type.*", "\\1,\\2", "g", $0 ), parts, "," )
+          paths[ parts[ 2 ] ] = parts[ 1 ] "/"
+        }
+
+        END {
+          changed = 1
+          while ( changed == 1 ) {
+            changed = 0
+            for ( key in paths ) {
+              if ( index( path, key ) == 1 ) {
+                sub( key, paths[ key ], path )
+                changed = 1
+              }
+            }
+          }
+          gsub( "//", "/", path )
+          gsub( "/", "\\", path )
+          print path
+        }' 

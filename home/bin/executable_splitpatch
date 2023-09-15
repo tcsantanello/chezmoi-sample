@@ -1,0 +1,19 @@
+#!/bin/awk -f
+
+BEGIN {
+  system( "mkdir -p patches" )
+}
+
+/^(diff|Index:)/ {
+  cmd = sprintf( "echo '%s' | sha1sum | cut -f 1 -d' '", $0 )
+  cmd | getline sha
+  close( cmd )
+  output = "patches/" sha ".patch"
+}
+
+length( output ) > 0 {
+  print $0 >> output
+
+}
+
+

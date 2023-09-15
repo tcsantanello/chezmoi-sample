@@ -1,0 +1,4 @@
+#!/bin/bash
+
+xprop | awk '/PID/ { print $NF }'
+

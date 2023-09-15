@@ -1,0 +1,57 @@
+#!/bin/bash
+
+function artist( ) {
+    eval $2=\"$( mp3info -p %a "$1" )\"
+}
+
+function _fixcaps( ) {
+  sed 's/ '$1' / '$2' /g'
+}
+
+function fixcaps( ) {
+    DEFS=(
+        "[Aa]"         "a"
+        "[Ii][Nn]"     "in"
+        "[Ii][Ss]"     "is"
+        "[Ii][Tt]"     "it"
+        "[Oo][Ff]"     "of"
+        "[Aa][Nn][Dd]" "and"
+        "[Tt][Hh][Ee]" "the"
+        "[Tt][Oo]"     "to"
+    )
+
+    LINE=$( cat - )
+
+    for((i=0;i<${#DEFS[@]};i+=2)); do
+        LINE=$( echo "$LINE" | _fixcaps ${DEFS[$i]} ${DEFS[$i+1]} )
+    done
+
+    echo $LINE
+}
+
+function title( ) {
+    eval $2=\"$( mp3info -p %t "$1" | fixcaps )\"
+}
+
+function erun( ) {
+    "$@"
+}
+
+ls -1 | while read line; do
+    B=$( basename "$line" .MP3 )
+    if test "${B}" != "${line}"; then
+        mv "$line" "${B}.mp3}"
+    fi
+
+    B=$( basename "$line" .mp3 )
+    if test "${B}" != "${line}"; then
+        artist "$line" ARTIST
+        title "$line" TITLE
+        new="$ARTIST - $TITLE.mp3"
+        if test "$line" != "$new" -a ${#new} -gt 8; then
+            erun mv "$line" "$new"
+        else
+            echo "$line"
+        fi
+    fi
+done

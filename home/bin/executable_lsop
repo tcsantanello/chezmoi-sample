@@ -1,0 +1,9 @@
+#!/bin/bash
+
+PROCESSES=( $( upidof $1 ) )
+
+for(( i=0 ; i < ${#PROCESSES[@]}; ++i )); do
+  echo "---------------- ${PROCESSES[$i]} ----------------"
+  /usr/sbin/lsof -p ${PROCESSES[$i]}
+done
+

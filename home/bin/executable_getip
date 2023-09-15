@@ -1,0 +1,3 @@
+#!/bin/bash
+
+nslookup "$@" | sed -nr '/#/d;/Name|Address/{s,.*:[ \t]*,,;p}' | tail -n 1

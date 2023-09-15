@@ -1,0 +1,11 @@
+.*
+*
+!.bash**
+!.zsh**
+!.tmux**
+!.config/delta
+!.emacs.d
+!.doom.d
+!.tmux
+!bin
+.tmux/plugins/**

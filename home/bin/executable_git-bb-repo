@@ -1,0 +1,107 @@
+#!/bin/bash
+
+: ${BITBUCKET_URL:=https://git.availity.com}
+
+send() {
+  local -a args=("${@:1:${#}-1}")
+
+  if printf '%s\n' "${args[@]}" | grep -Eq '^(POST|PUT|PATCH)$'; then
+    args=(${args[@]} -d @-)
+  fi
+
+  curl -s -k \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    -u ${API_USERNAME}:${API_PASSWORD} \
+    ${args[@]} \
+    "${BITBUCKET_URL}/rest/api/1.0/${@:${#}}" | tee /dev/stderr
+}
+
+createRepo() {
+  local resp
+
+  for repo in "$@"; do
+    local owner="${repo//\/*/}"
+
+    if test "${owner}" == "${API_USERNAME}"; then
+      repo="${repo//${owner}/~${owner^^}}"
+      owner="${repo//\/*/}"
+    fi
+
+    local path="projects/${owner}/repos"
+
+    resp=$(
+      cat <<EOF | send -X POST ${path}
+{
+  "slug": "${repo//*\//}",
+  "name": "${repo//*\//}",
+  "scmId": "git",
+  "project": {},
+  "defaultBranch": "master"
+}
+EOF
+    )
+
+    if test "$(jq -r '.errors' <<<"${resp}")" != "null"; then
+      jq -r '.errors[] | .message' <<<"${resp}"
+      continue
+    fi
+
+    if test -n "${REMOTE}"; then
+      SSH_URL=$(jq -r '.links.clone[] | select( .name == "ssh" ) | .href' <<<"${resp}")
+      HTTP_URL=$(jq -r '.links.clone[] | select( .name == "http" ) | .href' <<<"${resp}")
+
+      if test -n "$(ssh -T ${SSH_URL//:*/} "" 2>&1 | sed '/successfully auth/!d')"; then
+        URL=${SSH_URL}
+      else
+        URL=${HTTP_URL}
+      fi
+
+      if test -n "${URL}"; then
+        if test -n "$(git remote | grep "${REMOTE}")"; then
+          git remote set-url ${REMOTE} "${URL}"
+        else
+          git remote add ${REMOTE} "${URL}"
+        fi
+      fi
+    fi
+
+    jq -r '"Successfully created repository \( .project.key )/\( .slug )"' <<<"${resp}"
+  done
+}
+
+usage() {
+  cat <<EOF
+${0}: Create a repository
+  -r name                            Add new repository as a remote
+EOF
+}
+
+while getopts "r:" flag >& /dev/null; do
+  if test "$flag" = "?"; then
+    usage
+  elif test -n "$OPTARG"; then
+    if test "${flag}" == "H"; then
+      export ${flag}="${!flag}|${OPTARG}"
+    else
+      export ${flag}="$OPTARG"
+    fi
+  else
+    export ${flag}=true
+  fi
+done
+
+shift $((${OPTIND} - 1))
+
+VISIBILITY=${v:-internal}
+REMOTE=${r}
+IFS='|'
+IFS=$' \t\n'
+
+eval $(
+  echo "url=${BITBUCKET_URL//api\./}" |
+    git credential fill |
+    sed 's,\([^=]*\),API_\U\1,'
+)
+
+createRepo "$@"

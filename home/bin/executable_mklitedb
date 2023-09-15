@@ -1,0 +1,182 @@
+#!/usr/bin/perl -w
+
+eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
+    if 0; # not running under some shell
+
+use strict;
+use Getopt::Long;
+use DBI;
+
+use vars qw($VERSION);
+
+$VERSION = "1.6";
+
+my $calls = { };
+
+# A map from mangled C++ names to the corresponding demangled ones
+my $demangle = { };
+
+# The current function
+my $curfunc;
+
+my $fileName = "";
+my $dbh;
+
+# Functions to omit
+my @omit = ();
+my $include_external = 0;
+
+# Mapping from symbol reference types to dot styles
+my $styles = {
+    direct => 'solid',
+    indirect => 'dotted'
+};
+
+sub demangle {
+    my ($name) = @_;
+    return $demangle->{$name} || $name;
+}
+
+sub getID {
+    my ( $name, $src ) = @_;
+
+    my $module;
+
+    if ( $src =~ /(.*)\/([^\/]*)$/ ) {
+        $module = $1;
+        $src    = $2;
+    }
+
+  sel:
+    my $stmt   = $dbh->prepare( "SELECT id from functions where name = ? and module = ? and src = ?" );
+    my $result = $stmt->execute( $name, $module, $src ) or die $stmt->errstr;
+
+    my ( $id ) = $stmt->fetchrow_array;
+
+    if ( $stmt->rows == 0 ) {
+        $stmt->finish;
+
+        $stmt  = $dbh->prepare( "INSERT INTO functions ( name, src, module ) values ( ?, ?, ? )" );
+        $stmt->execute( $name, $src, $module );
+
+        goto sel;
+    } else {
+        $stmt->finish;
+
+        $stmt = $dbh->prepare( "UPDATE functions SET SRC=? WHERE ID = ?" );
+        $stmt->execute( $src, $id );
+        $stmt->finish;
+    }
+    return $id;
+}
+
+sub setCall {
+    my ( $callee, $caller ) = @_;
+
+  sel:
+    my $stmt   = $dbh->prepare( "SELECT id from calls where caller = ? and callee = ?" );
+    my $result = $stmt->execute( $caller, $callee ) or die $stmt->errstr;
+
+    my ( $id ) = $stmt->fetchrow_array;
+
+    if ( $stmt->rows == 0 ) {
+        $stmt->finish;
+
+        $stmt  = $dbh->prepare( "INSERT INTO calls ( caller, callee ) values ( ?, ? )" );
+        $stmt->execute( $caller, $callee );
+
+        goto sel;
+    }
+
+    $stmt->finish;
+
+    return $id;
+}
+
+sub createFunctionsTable {
+    my $stmt = $dbh->prepare( "CREATE TABLE functions ( id integer primary key autoincrement, name text, src text, module text )" );
+    $stmt->execute;
+}
+
+sub createCallsTable {
+    my $stmt = $dbh->prepare( "CREATE TABLE calls ( id integer primary key autoincrement, caller integer, callee integer )" );
+    $stmt->execute;
+}
+
+sub checkDB {
+    $dbh->prepare( "SELECT 1 FROM functions LIMIT 1" ) or createFunctionsTable;
+    $dbh->prepare( "SELECT 1 FROM calls LIMIT 1" ) or createCallsTable;
+}
+
+GetOptions('omit=s' => \@omit,
+	   'include-external' => \$include_external);
+
+@omit = split(/,/, join(',', @omit));
+
+my $dbargs = { AutoCommit => 0,
+               PrintError => 0 };
+$dbh = DBI->connect( "dbi:SQLite:dbname=callinfo.db", "", "", $dbargs );
+
+checkDB;
+
+while (<>) {
+    chomp;
+    if ( $ARGV =~ /(.*)\.[0-9]+\..*/ ) {
+        if ( $1 ne $fileName ) {
+            printf( "Processing %s\n", $1 );
+        }
+        $fileName = $1;
+    }
+
+    if (/^;; Function (\S+)\s*$/) {
+	# pre-gcc4 style
+	$curfunc = $1;
+
+#        if ( $curfunc ne "main" ) {
+            if ( ! exists( $calls->{ $curfunc } ) ) {
+                $calls->{$curfunc} = { 
+                    "id" => getID( $curfunc, $fileName ),
+                    "calls" => { } 
+                };
+            }
+#        }
+    } elsif (/^;; Function (.*)\s+\((\S+)\)$/) {
+	# gcc4 style
+	$curfunc = $2;
+	$demangle->{$curfunc} = $1;
+
+#        if ( $curfunc ne "main" ) {
+            if ( ! exists( $calls->{ $curfunc } ) ) {
+                $calls->{$curfunc} = { 
+                    "id" => getID( $curfunc, $fileName ),
+                    "calls" => { } 
+                };
+            }
+#        }
+    }
+
+#    if ( $curfunc ne "main" ) {
+        if (/^.*\(call.*"(.*)".*$/) {
+            $calls->{$curfunc}->{ "calls" }->{ $1 } = "direct";
+        } elsif (/^.*\(symbol_ref.*"(.*)".*$/) {
+            $calls->{$curfunc}->{ "calls" }->{ $1 } = "indirect";
+        }
+#    }
+}
+
+delete @$calls{@omit};
+
+
+foreach my $caller (keys %{$calls}) {
+    foreach my $callee ( keys %{ $calls->{ $caller }->{ "calls" } } ) {
+	next unless exists( $calls->{ $callee } );
+
+        setCall( $calls->{ $callee }->{ "id" },
+                 $calls->{ $caller }->{ "id" } );
+    }
+}
+
+printf("\n");
+
+$dbh->commit();
+$dbh->disconnect();

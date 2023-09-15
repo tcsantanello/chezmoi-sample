@@ -1,0 +1,46 @@
+{{- $token     := coalesce ( env "CHEZMOI_GITHUB_ACCESS_TOKEN" )
+                           ( env "GITHUB_ACCESS_TOKEN" )
+                           ( env "GITHUB_TOKEN" ) -}}
+{{- $token      = empty $token | ternary "" ( printf ":%s@" $token ) -}}
+{{- $requrl    := printf "https://%sapi.github.com/repos/%s/releases/latest" $token .project -}}
+{{- $cachePath := printf "%s/httpcache" .chezmoi.cacheDir  -}}
+{{- $cacheFile := ( sha256sum $requrl ) -}}
+{{- $cacheCmd  := printf "mkdir -p '%s'; find '%s' -name %s -mtime -1 -exec cat {} \\;" $cachePath $cachePath $cacheFile -}}
+{{- $cache     := output "sh" "-c" $cacheCmd -}}
+{{- $curlCmd   := printf "curl -Lsk %s -o -" $requrl -}}
+{{- $wgetCmd   := printf "wget -O - -q %s"   $requrl -}}
+{{- $webget    := printf "( %s || %s ) 2>/dev/null | tee %s/%s" $curlCmd $wgetCmd $cachePath $cacheFile -}}
+{{- $result    := ( mustFromJson ( default $cache ( output "sh" "-c" $webget ) ) ) -}}
+{{- $arch      := printf "(%s%s)" ( .chezmoi.arch          ) ( hasKey . "arch" | ternary ( printf "|%s" ( get . "arch") ) "" ) -}}
+{{- $os        := printf "(%s%s)" ( .chezmoi.os    | lower ) ( hasKey . "os"   | ternary ( printf "|%s" ( get . "os"  ) ) "" ) -}}
+{{- $filter    := hasKey . "skip" | ternary ( printf "(%s)" ( get . "skip" | join "|" ) ) "" -}}
+{{- $url       := "" -}}
+
+{{- if eq $arch "(amd64)" -}}
+{{-  $arch = "(amd64|x86_64|x64)" -}}
+{{- else if eq $arch "(arm64)" -}}
+{{-  $arch = "(arm64|aarch64)" -}}
+{{- end -}}
+
+{{- if eq $os "(darwin)" -}}
+{{-  $os = printf "(darwin|macos|osx)" -}}
+{{- else if eq "microsoft" ( .chezmoi.kernel.osrelease | lower ) -}}
+{{-  $os = printf "(windows|win) " -}}
+{{- end -}}
+
+{{- if hasKey $result "message" -}}
+{{-  output "sh" "-c" ( printf "rm %s/%s" $cachePath $cacheFile ) -}}
+{{-  fail (get $result "message") -}}
+{{- end -}}
+
+{{- $browser_url := "" -}}
+{{- range get $result "assets" -}}
+{{-  $browser_url = get . "browser_download_url" -}}
+{{-  if and ( ( $browser_url | lower ) | regexMatch ( $os   | lower ) )
+            ( ( $browser_url | lower ) | regexMatch ( $arch | lower ) )
+            ( empty $filter | ternary true ( $browser_url | regexMatch $filter | not ) )
+            ( empty $url ) -}}
+{{-     $url = $browser_url -}}
+{{-  end -}}
+{{- end -}}
+{{- $url -}}

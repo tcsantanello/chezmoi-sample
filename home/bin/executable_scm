@@ -1,0 +1,129 @@
+#!/bin/bash
+
+export PRGPATH=/opt/ibm/jazz/scmtools/eclipse
+PASSWDFL=$HOME/.config/jazz.passwd
+REPOSITORY="https://clm.emedny.org/ccm/"
+MIN=4096
+MAX=16392
+
+function scm( ) {
+    if test -x ${PRGPATH}/scm; then
+        ${PRGPATH}/scm "$@"
+    else
+        #"${PRGPATH}/../../jre/bin/java" \
+        java \
+            -Dorg.eclipse.emf.ecore.plugin.EcorePlugin.doNotLoadResourcesPlugin=true \
+            -Djava.protocol.handler.pkgs=com.ibm.net.ssl.www2.protocol \
+            -Dscm.show.own.errors=true \
+            -Dosgi.requiredJavaVersion=1.6 \
+            ${MIN:+-Xms${MIN}m} \
+            ${MAX:+-Xmx${MAX}m} \
+            -jar "${PRGPATH}/plugins/org.eclipse.equinox.launcher_1.3.0.v20120522-1813.jar" \
+            -data "*noDefault" \
+            "$@"
+    fi
+}
+
+function getcmds( ) {
+    ${PRGPATH}/scm help ${1} \
+        | sed -n '/ommands:/,$ { /-/ { s,[ \t]*\([^ \t]*\).*,\1,; p } }' \
+        | xargs echo | sed '/^$/d'
+}
+
+function filter_l( ) {
+    local args=$1
+    local cmds="${@:2}"
+
+    for each in ${cmds}; do
+      echo "${each}"
+      args="${args//* ${each}/ ${each}}"
+      echo "${args}"
+    done | tail -n 1
+}
+
+function filter_r( ) {
+    local args=$1
+    local cmds="${@:2}"
+
+    if test -z "${cmds}"; then
+        echo ${args// *}
+    else
+        for each in ${cmds}; do
+          echo "${each}"
+          args="${args// ${each}*/ ${each}}"
+          echo "${args}"
+        done | tail -n 1
+    fi
+}
+
+function index_of( ) {
+    local arr=$1
+    local val=$2
+    local max=0
+
+    eval max=\${#${arr}[@]}
+
+    for (( i = 0; i < ${max}; ++i )); do
+       eval aval=\${${arr}[$i]}
+       if test "${val}" == "${aval}"; then
+           echo ${i}
+           return
+       fi
+    done
+
+    echo -1
+}
+
+OPTS=( "${@}" )
+
+case "$*" in
+    *help*)
+        ;;
+    *)
+        COMMAND=$( args="$( echo "${*}" | sed 's,--[^ ]\+ [^ ]\+,,;s,^[ \t]*,,' )"
+                   args="$( filter_l "${args}" $( getcmds ) )"
+                   cmd="${args// */}"
+                   filter_r "${args}" $( getcmds ${cmd} )
+               )
+        ARGS=$( scm help ${COMMAND} 2>&1 \
+            | sed -n '/Usage/,/^$/{ p }' \
+            | sed -n '{
+                :r; $!{ N; s,\n,,; br }; s,^[^-]*,,;
+                s,\[\(before-type\|before-selector\)\],,g;
+                s,<\(after-type\|after-selector\)>,,g;
+                s,[ \t]\+, ,g;
+                s,\] \[,|,g;
+                s,| *,\n,g;
+                s,<arg> ,\n,g;
+                s,[][],,g;
+                p;
+              }' \
+            | sort -u \
+            | sed '
+                s,.*--password-file.*,\nOPT:PASSFILE\n,g;
+                s,.*--generatePasswordFile.*,\nOPT:GENPASSFILE\n,g;
+                s,.*--repository-uri .*,\nOPT:REPOSITORY\n,g;
+                s,.*--username .*,\nOPT:USERNAME\n,g;
+              ' \
+            | sort -u \
+            | sed '
+                /OPT:/!d;
+                s,OPT:PASSFILE,--password-file '$PASSWDFL',;
+                s,OPT:GENPASSFILE,-o --generatePasswordFile '$PASSWDFL',;
+                s,OPT:USERNAME,-u '$USER',;
+                s,OPT:REPOSITORY,-r '$REPOSITORY',;
+              ' \
+            | xargs echo | sed 's,\(.*generatePasswordFile.*\)--password-file '$PASSWDFL',\1,'
+            )
+        idx=$(( $( index_of OPTS ${COMMAND/* /} ) + 1 ))
+
+
+        if test ${idx} -le 0; then
+            OPTS=( "${OPTS[@]}" ${ARGS} )
+        else
+            OPTS=( "${OPTS[@]:0:${idx}}" ${ARGS} "${OPTS[@]:${idx}}" )
+        fi
+        ;;
+esac
+
+scm "${OPTS[@]}"; exit $?

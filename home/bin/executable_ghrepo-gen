@@ -1,0 +1,143 @@
+#!/bin/bash
+
+: ${GITHUB_URL:=https://api.github.com}
+
+function send() {
+  local -a args=("${@:1:${#}-1}")
+
+  if printf '%s\n' "${args[@]}" | grep -q -P '^(POST|PUT|PATCH)$'; then
+    args=(${args[@]} -d @-)
+  fi
+
+  curl -s -k \
+    -H "Accept: application/vnd.github.baptiste-preview+json" \
+    -u ${GITHUB_USERNAME}:${GITHUB_PASSWORD} \
+    ${args[@]} \
+    "${GITHUB_URL}/${@:${#}}"
+}
+
+function setRepoHooks() {
+  local repo="${1}"
+
+  send repos/${repo}/pre-receive-hooks | jq -r '.[] | "\( .id )=\( .name )"' | while read line; do
+    local enforcement="disabled"
+
+    for ((h = 0; h < ${#HOOKS[@]}; ++h)); do
+      local hook="${HOOKS[$h]}"
+      if [[ "${line,,}" =~ "${hook,,}" ]]; then
+        enforcement="enabled"
+      fi
+    done
+
+    local resp=$(
+      cat <<EOF | send -X PATCH repos/${repo}/pre-receive-hooks/${line//=*/}
+{ "enforcement": "${enforcement}" }
+EOF
+    )
+
+    if test "${enforcement}" != "disabled"; then
+      jq -r '"Successfully \( .enforcement ) \( .name )"' <<<"${resp}"
+    fi
+  done
+}
+
+function createRepo() {
+  local resp
+
+  for repo in "$@"; do
+    local owner="${repo//\/*/}"
+    local path="orgs/${owner}/repos"
+
+    if test "${owner}" == "${GITHUB_USERNAME}"; then
+      path="user/repos"
+    fi
+
+    resp=$(
+      cat <<EOF | send -X POST ${path}
+{
+  "visibility": "${VISIBILITY}",
+  "owner": "${owner}",
+  "name": "${repo//*\//}",
+  "description": "${DESC}",
+  "has_issues": ${ISSUES},
+  "has_projects": ${PROJECTS},
+  "has_wiki": ${WIKI}
+}
+EOF
+    )
+
+    if test "$(jq -r '.message' <<<"${resp}")" != "null"; then
+      jq -r '.message' <<<"${resp}"
+      continue
+    fi
+
+    if test -n "${REMOTE}"; then
+      SSH_URL=$(jq -r '.ssh_url' <<<"${resp}")
+      HTTP_URL=$(jq -r '.clone_url' <<<"${resp}")
+      if test -n "$(ssh -T ${SSH_URL//:*/} "" 2>&1 | sed '/successfully auth/!d')"; then
+        URL=${SSH_URL}
+      else
+        URL=${HTTP_URL}
+      fi
+
+      if test -n "${URL}"; then
+        if test -n "$(git remote | grep "${REMOTE}")"; then
+          git remote set-url ${REMOTE} "${URL}"
+        else
+          git remote add ${REMOTE} "${URL}"
+        fi
+      fi
+    fi
+
+    setRepoHooks "${repo}"
+
+    jq -r '"Successfully created repository \( .full_name )"' <<<"${resp}"
+  done
+}
+
+function usage() {
+  cat <<EOF
+${0}: Create a repository
+  -d description                     Set the repo description
+  -v [public, private, internal]     Set the visibility
+  -H [hook name]                     Enable pre-receive hook
+  -r name                            Add new repository as a remote
+  -i                                 Enable issues
+  -w                                 Enable wiki
+  -p                                 Enable projects
+EOF
+}
+
+while getopts "H:I:v:r:d:iwp" flag; do
+  if test "$flag" = "?"; then
+    usage
+  elif test -n "$OPTARG"; then
+    if test "${flag}" == "H"; then
+      export ${flag}="${!flag}|${OPTARG}"
+    else
+      export ${flag}="$OPTARG"
+    fi
+  else
+    export ${flag}=true
+  fi
+done
+
+shift $((${OPTIND} - 1))
+
+VISIBILITY=${v:-internal}
+REMOTE=${r}
+ISSUES=${i:-false}
+WIKI=${w:-false}
+PROJECTS=${p:-false}
+DESC="${d}"
+IFS='|'
+HOOKS=(${H/|/})
+IFS=$' \t\n'
+
+eval $(
+  echo "url=${GITHUB_URL//api\./}" |
+    git credential fill |
+    sed 's,\([^=]*\),GITHUB_\U\1,'
+)
+
+createRepo "$@"

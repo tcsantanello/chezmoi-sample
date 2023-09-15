@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -eou pipefail
+
+EXTRACT_DIR=$( mktemp -d );
+
+trap 'test -n "${EXTRACT_DIR}" && rm -rf "${EXTRACT_DIR}' 1 3 15
+
+NAME="${EXTRACT_DIR}/archive.pkg"
+DEST="${HOME}/${1}"
+LINK="${2}"
+
+cat - > "${NAME}"
+mkdir -p "${DEST}" &> /dev/null
+
+cd "${EXTRACT_DIR}";
+
+xar -xf "${NAME}"
+cat *.pkg/Payload | gunzip -dc | ( cd "${DEST}"; cpio -imd ) >& /dev/null;
+
+if test -n "${LINK:-}"; then
+  cat << EOF
+#!/bin/sh
+
+exec "${DEST}/${LINK}" "\${@}"
+EOF
+fi
+
+cd -
+rm -rf "${EXTRACT_DIR}"

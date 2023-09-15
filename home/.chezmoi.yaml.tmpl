@@ -1,0 +1,60 @@
+{{- $domain            := "" -}}
+{{- $bitwarden_cred_id := "" -}}
+{{- $user_name         := "" -}}
+{{- $user_shell        := "" -}}
+{{- $email             := "" -}}
+{{- $conan_cred_id     := "" -}}
+{{- $userent           := list -}}
+{{- $git_credentials   := list -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{-   $domain     = mustRegexReplaceAll ".* [a-zA-Z0-9]+@([a-zA-Z0-9]+.[a-zA-Z0-9]+) .*" ( index ( splitList "\n" ( output "klist" "-l" ) ) 1 ) "${1}" | lower -}}
+{{-   $domain     = default ( output "sh" "-c" "scutil --dns | sed '/search/!d;s,.*: *,,' | sort -u" ) $domain -}}
+{{-   $user_name  = ( index ( splitList ":" ( output "dscl" "." "-read" ( list "/Users/" .chezmoi.username  | join "" ) "RealName"  ) ) 1 | trim ) -}}
+{{-   $user_shell = ( index ( splitList ":" ( output "dscl" "." "-read" ( list "/Users/" .chezmoi.username  | join "" ) "UserShell" ) ) 1 | trim ) -}}
+{{- else if eq .chezmoi.os "linux" -}}
+{{-   $domain     = ( output "hostname" "-d" | trim ) -}}
+{{-   $userent    =  splitList ":" ( output "getent" "passwd" .chezmoi.username | trim ) -}}
+{{-   $user_name  = ( index $userent 4 ) -}}
+{{-   $user_shell = ( index $userent 6 ) -}}
+{{- end -}}
+{{- if eq .chezmoi.hostname "LAPTOP" -}}
+{{-   $git_credentials    = prepend $git_credentials "b72c5c8c-e93d-4952-a21b-aeec5690199e" -}}
+{{-   $git_credentials    = prepend $git_credentials "268a54a8-f165-4f09-ab9e-f84225a6d3d3" -}}
+{{-   $email              = ( bitwardenFields "item" ( first $git_credentials ) ).email.value -}}
+{{- else -}}
+{{-   $git_credentials    = prepend $git_credentials "ab928e6c-6f2c-439b-8a2b-db7934250053" -}}
+{{-   $git_credentials    = append $git_credentials "18118d47-843f-4bab-a3da-ccc60928fb12" -}}
+{{-   $bitwarden_cred_id  = "f7056f42-113f-4773-9e61-bf7ff394ccbb" -}}
+{{-   $email              = ( bitwardenFields "item" ( first $git_credentials ) ).email.value -}}
+{{-   $conan_cred_id      = "0d3af220-abd9-4965-ab74-43933794978e" -}}
+{{- end -}}
+
+git:
+  autoCommit: true
+  autoPush: true
+
+gitHub:
+  refreshPeriod: 86400
+
+bitwarden:
+  command: bww
+
+data:
+  domain: {{ $domain }}
+  user:
+    name: {{ $user_name }}
+    shell: {{ $user_shell }}
+    email: {{ $email }}
+  git:
+    credentials:
+{{- range $git_credentials | sortAlpha }}
+      - {{ . }}
+{{- end }}
+{{ if ne $conan_cred_id "" }}
+  conan:
+    credentials: {{ $conan_cred_id }}
+{{- end }}
+{{ if ne $bitwarden_cred_id "" }}
+  bitwarden:
+    credentials: {{ $bitwarden_cred_id }}
+{{- end }}

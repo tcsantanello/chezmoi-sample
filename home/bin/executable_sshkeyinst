@@ -1,0 +1,30 @@
+#!/bin/bash
+
+if test -n "\`type printf 2>/dev/null \`"; then
+  PRINT=printf
+elif test "\`uname\`" == "Linux"; then
+  PRINT="echo -ne"
+else
+  PRINT=echo
+fi
+
+while getopts "u:k:h:" flag; do
+  [ "$flag" = "?" ] && usage || [ -n "$OPTARG" ] && export ${flag}=$OPTARG || export ${flag}=true
+done
+
+if test "$h" != "${h/*@*/@}"; then
+  u=${h/@*/}
+  h=${h/*@/}
+fi
+
+if test "${k:${#k}-4}" != ".pub"; then
+  if test ! -f "${k}.pub"; then
+    PRINT "Error locating public key for ${k}\n"
+    exit 1
+  else
+    k=${k}.pub
+  fi
+fi
+
+cat $k | ssh -l $u $h '( mkdir -p ~/.ssh; cat - >> ~/.ssh/authorized_keys2 ); chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys2'
+

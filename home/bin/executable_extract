@@ -1,0 +1,24 @@
+#!/bin/bash
+
+IFS=$'\n'
+
+#exec 1>&/dev/null
+#exec 2>&/dev/null
+
+while test -n "$1"; do
+  case "$1" in
+	*.rar)
+		unrar x  "$1"
+		;;
+	*.zip)
+		unzip -o "$1"
+		;;
+	*.gz)
+		gunzip -c "$1" > "${1:0:${#1}-3}"
+		;;
+	*.7z)
+		7z x -y "$1"
+		;;
+  esac
+  shift
+done

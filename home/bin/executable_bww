@@ -1,0 +1,67 @@
+#!/bin/sh
+
+DIR="$( dirname "$( readlink -f "${0}" )" )"
+BW=${DIR}/.bw
+
+case "$( uname )" in
+  Darwin)
+    id() { test retrieve >/dev/null && echo "EXISTS"; }
+    retrieve() { security find-generic-password -a ${USER} -s bw -w; }
+    remove() { security delete-generic-password -a ${USER} -s bw; }
+    store() { security add-generic-password -U -a ${USER} -s bw -w "$1"; }
+    ;;
+
+  Linux)
+    id() { keyctl show @u | awk '/user: bw/ { print $1 }'; }
+    retrieve() { keyctl pipe "${1}"; }
+    remove() { keyctl unlink "${1}"; }
+    store() { keyctl add user bw "$1" @u; }
+    refresh() { keyctl timeout "$1" "$TIMEOUT"; }
+
+    if test -z "${KEYCTL_SESSION}"; then
+      KEYCTL_SESSION=$$ exec keyctl session - $0 "$@"
+    else
+      keyctl link @u @s
+      keyctl link @us @s
+      keyctl reap >&/dev/null
+    fi
+    ;;
+
+  *)
+    >&2 echo "Unknown system type"
+    exit 1
+    ;;
+esac
+
+TIMEOUT=86400 #how long to retain session key for in seconds
+KEY_ID=$( id )
+
+if test "$1" = "clear"; then
+  test -n "${KEY_ID}" && remove "${KEY_ID}"
+  exec "${BW}" lock
+fi
+
+if test -n "${KEY_ID}"; then
+  export BW_SESSION=$( retrieve "${KEY_ID}" )
+
+  if  "${BW}" unlock --check 2>&1 | grep 'mac failed' >&/dev/null; then
+    BW_SESSION=""
+    remove "${KEY_ID}" >& /dev/null
+  else
+    refresh "${KEY_ID}" >& /dev/null
+  fi
+fi
+
+if test -z "${BW_SESSION}"; then
+  export BW_SESSION="$( "${BW}" unlock --raw )"
+
+  if test -n "${BW_SESSION}"; then
+    KEY_ID=$( store "${BW_SESSION}" )
+
+    if test $? -eq 0; then
+      refresh "${KEY_ID}" >&/dev/null
+    fi
+  fi
+fi
+
+exec "${BW}" "$@"

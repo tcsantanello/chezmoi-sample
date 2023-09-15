@@ -1,0 +1,4 @@
+#!/bin/bash
+
+exec kubectl get secret "$@" | jq -r '.data | map_values(@base64d)'
+

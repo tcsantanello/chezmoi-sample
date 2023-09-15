@@ -1,0 +1,44 @@
+#!/bin/bash
+
+CMD=/c/Windows/System32/cmd.exe
+ARGS=( $@ )
+
+function cmd() {
+    if test -z "${INSIDE_EMACS}"; then
+        exec rlwrap "${CMD}" $@
+    else
+        exec "${CMD}" $@
+    fi
+}
+
+function winrealpath() {
+  local rootfs="$( cd /; ${CMD} /c echo %cd% | tr -d '\r\n' | sed 's/\\/\\\\/g' )/rootfs"
+  local path="$( realpath "$1" )"
+  local mount="$( mount | egrep -v "(lxfs|sysfs|proc|tmpfs|devpts|binfmt)" | \
+  awk -v path="${path}" -v prefix="/" -v rootfs="${rootfs}" '
+    function end( ) {     
+      path=rootfs""substr(path,length(prefix))
+      gsub( /\//, "\\", path );
+      gsub( /\\/, "\\\\", path );
+
+      print path;
+      exit 0;
+    }
+    index(path,$3)==1 { rootfs=$1; prefix=$3; end(); }
+    END { end(); }
+  ' )"
+ 
+  echo $mount
+}
+
+for((i=0;i<${#ARGS[@]};++i)); do
+  if test -f "${ARGS[$i]}" -o -d "${ARGS[$i]}"; then
+    ARGS[$i]=$( winrealpath ${ARGS[$i]} )
+  fi
+done
+
+if test $# -gt 0; then
+    cmd ${ARGS:+/c ${ARGS[@]}}
+else
+    cmd /k cd "$( winrealpath . )"
+fi

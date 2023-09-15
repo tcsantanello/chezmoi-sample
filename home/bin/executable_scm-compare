@@ -1,0 +1,41 @@
+#!/bin/bash
+
+set -x
+
+# test args
+if test ${#} -lt 2; then
+    echo 1>&2 "Usage: ${0} LOCAL REMOTE MERGED BASE"
+    exit 1
+fi
+
+# args
+LOCAL=${1}
+REMOTE=${2}
+MERGED=${3:-$( mktemp -d )/${1}}
+
+if test ${#} -ge 4 -a -r "${4}"; then
+    EVAL="ediff-merge-files-with-ancestor \"${LOCAL}\" \"${REMOTE}\" \"${4}\" nil \"${MERGED}\""
+elif test ${#} -ge 3 -a -r "${3}"; then
+    EVAL="ediff-merge-files \"${LOCAL}\" \"${REMOTE}\" nil \"${MERGED}\""
+else
+    EVAL="ediff \"${LOCAL}\" \"${REMOTE}\""
+fi
+
+# run emacsclient
+emacsclient -e "(${EVAL})" 2>&1
+
+# check modified file
+if test -n "$( egrep -c '^(<<<<<<<|=======|>>>>>>>|####### Ancestor)' ${MERGED} 2>/dev/null )"; then
+    MERGEDSAVE=$( mktemp -d )
+    cp ${MERGED} ${MERGEDSAVE}
+    echo 1>&2 "Oops! Conflict markers detected in $MERGED."
+    echo 1>&2 "Saved your changes to ${MERGEDSAVE}"
+    echo 1>&2 "Exiting with code 1."
+    exit 1
+fi
+
+if test ${#} -eq 2; then
+		echo 1>&2 "Merged result saved at ${MERGED}"
+fi
+
+exit 0

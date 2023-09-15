@@ -1,0 +1,44 @@
+#!/bin/gawk -f
+
+BEGIN {
+    split( "", functions, "" );
+    buffer = "";
+    depth  = 0;
+    name   = "";
+}
+
+{ 
+    buffer = buffer "\n" $0;
+}
+
+( name == "" ) &&                                       \
+( depth == 0 ) &&                                       \
+( ( match( $0, /([^ \t(]+)\(.*/, m ) ) ||           \
+  ( match( $0, /#[ \t]*define ([^( \t]+).*/, m ) ) ) { 
+    print m[ 1 ] ":" m[ 0 ]
+    name=m[ 1 ]
+}
+
+/{/ {
+    depth = depth + 1;
+}
+
+/}/ {
+    depth = depth - 1;
+    if ( depth == 0 ) {
+        if ( name != "" ) {
+            functions[ name ] = buffer;
+        } else {
+            print buffer
+        }
+
+        buffer = "";
+        name   = "";
+    } 
+}
+
+END {
+    for ( name in functions ) {
+        print functions[ name ] > name ".txt";
+    }
+}

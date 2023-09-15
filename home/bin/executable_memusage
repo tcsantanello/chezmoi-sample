@@ -1,0 +1,86 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Math::BigInt;
+
+my $pid = $ARGV[0];
+
+if ( !$pid ) {
+  print "procmap <pid>\n";
+  exit 1;
+}
+
+my $writable_code     = Math::BigInt->new( 0 );
+my $data              = Math::BigInt->new( 0 );
+my $rodata            = Math::BigInt->new( 0 );
+my $unreadable        = Math::BigInt->new( 0 );
+my $unbacked_unknown  = Math::BigInt->new( 0 );
+my $mapped_executable = Math::BigInt->new( 0 );
+my $mapped_wrexec     = Math::BigInt->new( 0 );
+my $mapped_rodata     = Math::BigInt->new( 0 );
+my $mapped_rwdata     = Math::BigInt->new( 0 );
+my $mapped_unknown    = Math::BigInt->new( 0 );
+my $mapped_unreadable = Math::BigInt->new( 0 );
+open my $fd, "/proc/$pid/maps" or die "Unable to open $pid map: $!";
+
+while ( <$fd> =~ m/^(\w+)-(\w+) (....) (\w+) (\S+) (\d+) *(.*)$/ ) {
+  my $start = Math::BigInt->new( "0x" . $1 );
+  my $end   = Math::BigInt->new( "0x" . $2 );
+  my $rwxp  = $3;
+
+  #$offset = Math::BigInt->new("0x".$4);
+  my $device = $5;
+
+  #$inode = $6;
+  #$filename = $7;
+
+  my $seg_size = $end->copy;
+  $seg_size->bsub( $start );
+  $seg_size->bdiv( 1024 );
+
+  if ( $device eq "00:00" ) {
+
+    # anonymous mapping
+    if ( $rwxp =~ m/rwx./ ) {
+      $writable_code->badd( $seg_size );
+    } elsif ( $rwxp =~ m/rw-./ ) {
+      $data->badd( $seg_size );
+    } elsif ( $rwxp =~ m/r--./ ) {
+      $rodata->badd( $seg_size );
+    } elsif ( $rwxp =~ m/---./ ) {
+      $unreadable->badd( $seg_size );
+    } else {
+      $unbacked_unknown->badd( $seg_size );
+    }
+  } else {
+    if ( $rwxp =~ m/r-x./ ) {
+      $mapped_executable->badd( $seg_size );
+    } elsif ( $rwxp =~ m/rwx./ ) {
+      $mapped_wrexec->badd( $seg_size );
+    } elsif ( $rwxp =~ m/r--./ ) {
+      $mapped_rodata->badd( $seg_size );
+    } elsif ( $rwxp =~ m/rw-./ ) {
+      $mapped_rwdata->badd( $seg_size );
+    } elsif ( $rwxp =~ m/---./ ) {
+      $mapped_unreadable->badd( $seg_size );
+    } else {
+      $mapped_unknown->badd( $seg_size );
+    }
+  }
+}
+close( $fd );
+
+print "Backed by file:\n";
+print "  Executable                r-x  " . $mapped_executable->bstr . "\n";
+print "  Write/Exec (jump tables)  rwx  " . $mapped_wrexec->bstr . "\n";
+print "  RO data                   r--  " . $mapped_rodata->bstr . "\n";
+print "  Data                      rw-  " . $mapped_rwdata->bstr . "\n";
+print "  Unreadable                ---  " . $mapped_unreadable->bstr . "\n";
+print "  Unknown                        " . $mapped_unknown->bstr . "\n";
+print "Anonymous:\n";
+print "  Writable code (stack)     rwx  " . $writable_code->bstr . "\n";
+print "  Data (malloc, mmap)       rw-  " . $data->bstr . "\n";
+print "  RO data                   r--  " . $rodata->bstr . "\n";
+print "  Unreadable                ---  " . $unreadable->bstr . "\n";
+print "  Unknown                        " . $unbacked_unknown->bstr . "\n";

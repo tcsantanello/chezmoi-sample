@@ -1,0 +1,8 @@
+#!/bin/bash
+
+TMP=$( mktemp );
+
+$( which git ) diff -w > "$TMP"
+splitdiff -a -d "$TMP"
+
+rm "$TMP"

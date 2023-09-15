@@ -1,0 +1,13 @@
+
+{{- if eq .chezmoi.os "linux" -}}
+{{- if eq .chezmoi.osRelease.id "arch" }}
+alias aur='bash <(curl aur.sh) -si '
+
+if test -x /bin/tpac; then
+  alias yaourt='tpac'
+elif test -x /bin/trizen; then
+  alias yaourt='trizen'
+fi
+
+{{- end -}}
+{{- end -}}

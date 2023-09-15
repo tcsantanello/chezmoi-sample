@@ -1,0 +1,44 @@
+#!/bin/bash
+
+function usage( ) {
+  cat <<EOF
+${0}: Upload content to nexus
+  -r name                            Name of the repository to populate
+  -d dir                             Name of the repository directory
+  -p pattern                         File pattern to upload
+EOF
+  exit 0
+}
+
+function perr( ) {
+    >&2 echo "$@"
+    exit 1;
+}
+
+source $HOME/.config/nexus/creds
+
+while getopts "r:d:p:" flag 2>/dev/null; do
+  if test "$flag" = "?"; then
+    usage
+  elif test -n "$OPTARG"; then
+    if test "${flag}" == "p"; then
+      export ${flag}="${!flag};${OPTARG}"
+    else
+      export ${flag}="$OPTARG"
+    fi
+  else
+    export ${flag}=true
+  fi
+done
+
+test -z "${p}" && perr "Must supply a pattern for file upload"
+test -z "${r}" && perr "Must supply a repository"
+p="${p:1}"
+BASE_URL="https://nexus.apps.k8s.csc-us-rsr-m001.com/repository/${r}/${d}"
+PATTERN=${p//;/-o -name }
+
+set -x
+find . -name ${PATTERN} | while read line; do
+ echo "${line}"
+ # curl -v --user "${USERNAME}:${PASSWORD}" --upload-file "${line}" "${BASE_URL}/${line}"
+done

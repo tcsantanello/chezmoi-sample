@@ -1,0 +1,48 @@
+#!/bin/sh
+
+cproto -I ../include/ *.c 2>/dev/null | awk '
+function rindex( haystack, needle ) {
+  ret = 0;
+  while ( ( idx = index( haystack, needle ) ) != 0 ) {
+    ret += idx;
+    haystack = substr( haystack, idx + 1 );
+  }
+  return ret;
+}
+
+function trim( str ) {
+  gsub(/^[[:space:]]*/,"",str);
+  gsub(/[[:space:]]*$/,"",str);
+  return str;
+}
+
+!/^\// { 
+  type = $1;
+  name = substr( $2, 1, index($2,"(") - 1 );
+
+  begParen = index($0,"(");
+  endParen = index($0,")");
+
+  block = substr($0, begParen + 1, endParen - ( begParen + 1 ) );
+  num = split( block, params, "," );
+
+  printf("%-10s\t%-20s ( ",type,name);
+  for ( i=0; i < num; ++i ) {
+    params[ i + 1 ] = trim( params[ i + 1 ] );
+    if ( length( params[i+1] ) ) {
+      end = rindex( params[i + 1], " " );
+      if ( substr( params[i+1], end + 1, 1 ) == "*" ) {
+        ++end;
+      }
+      printf("%s",trim(substr(params[i + 1],1,end)));
+      if ( i + 1 < num ) {
+        printf(", ");
+      }
+    }
+  } 
+  printf(" );\n");
+}
+
+/^\// { print }
+
+'
